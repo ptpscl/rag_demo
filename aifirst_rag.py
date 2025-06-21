@@ -134,7 +134,7 @@ if st.button("Get RAG Answer", disabled=not user_query.strip()):
         prompt = f"Answer the question based on the following context:\n\n{context}\n\nQuestion: {user_query}"
         with st.spinner("🤖 Thinking..."):
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
             )
