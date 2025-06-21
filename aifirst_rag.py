@@ -5,7 +5,7 @@ from qdrant_client.models import PointStruct, VectorParams, Distance
 from sentence_transformers import SentenceTransformer
 import pandas as pd
 import docx
-import fitz  # PyMuPDF for PDFs
+import fitz  # PyMuPDF
 from bs4 import BeautifulSoup
 import uuid
 
@@ -17,43 +17,50 @@ st.markdown("Upload PDFs, DOCX, Excel, TXT, and more — then ask natural langua
 # --- SIDEBAR ---
 st.sidebar.title("🔐 Configuration")
 
-# OpenAI
+# OpenAI API Key
 openai_key = st.sidebar.text_input("OpenAI API Key", type="password")
 if not openai_key:
-    st.warning("Please enter your OpenAI API key.")
+    st.sidebar.warning("Please enter your OpenAI API key.")
+
+# Qdrant Config
+qdrant_api = st.sidebar.text_input("Qdrant API Key", type="password")
+qdrant_url = st.sidebar.text_input(
+    "Qdrant URL (e.g., https://yourhost.cloud:6333)",
+    value="https://6a7820c2-43e6-45f7-bd2e-6e1f73bc6906.eu-central-1-0.aws.cloud.qdrant.io:6333"
+)
+
+# Try to connect to Qdrant only if both URL and API key are present
+qdrant_connected = False
+qdrant = None
+COLLECTION_NAME = "rag_demo"
+
+if qdrant_url and qdrant_api:
+    try:
+        qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api)
+        # Check or create collection
+        existing = qdrant.get_collections().collections
+        if not any(c.name == COLLECTION_NAME for c in existing):
+            qdrant.recreate_collection(
+                collection_name=COLLECTION_NAME,
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+            )
+        st.sidebar.success("✅ Connected to Qdrant")
+        qdrant_connected = True
+    except Exception as e:
+        st.sidebar.error(f"❌ Qdrant connection failed:\n{e}")
+else:
+    st.sidebar.info("Please input Qdrant URL and API Key.")
+
+# --- STOP IF KEYS MISSING ---
+if not openai_key:
+    st.warning("🔑 OpenAI API Key is required.")
+    st.stop()
+
+if not qdrant_connected:
+    st.warning("🧱 Qdrant must be connected before using the app.")
     st.stop()
 
 client = OpenAI(api_key=openai_key)
-
-# Qdrant
-qdrant_api = st.sidebar.text_input("Qdrant API Key", type="password")
-qdrant_url = st.sidebar.text_input("Qdrant URL (e.g., https://yourhost.cloud)", value="http://localhost:6333")
-
-if not qdrant_url:
-    st.warning("Please enter your Qdrant host URL.")
-    st.stop()
-
-try:
-    qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api if qdrant_api else None)
-except Exception as e:
-    st.error(f"Qdrant connection failed: {e}")
-    st.stop()
-
-COLLECTION_NAME = "rag_demo"
-
-# --- COLLECTION SETUP ---
-try:
-    collections = qdrant.get_collections().collections
-    if not any(c.name == COLLECTION_NAME for c in collections):
-        qdrant.recreate_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-        )
-except Exception as e:
-    st.error(f"Failed to check/create Qdrant collection: {e}")
-    st.stop()
-
-# --- EMBEDDING MODEL ---
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 # --- FILE TEXT EXTRACTOR ---
@@ -85,39 +92,37 @@ def extract_text_from_file(uploaded_file, file_type):
         else:
             return ""
     except Exception as e:
-        st.error(f"Failed to process file: {e}")
+        st.error(f"❌ Failed to extract text: {e}")
         return ""
 
-# --- FILE UPLOAD ---
-uploaded_file = st.file_uploader("📄 Upload a document (PDF, Word, Excel, CSV, TXT, HTML)", type=["txt", "pdf", "docx", "xlsx", "xls", "csv", "html"])
+# --- FILE UPLOAD + EMBEDDING ---
+uploaded_file = st.file_uploader("📄 Upload a document (PDF, DOCX, Excel, CSV, TXT, HTML)", 
+                                  type=["txt", "pdf", "docx", "xlsx", "xls", "csv", "html"])
 
 if uploaded_file:
     file_type = uploaded_file.name.split(".")[-1].lower()
-    extracted_text = extract_text_from_file(uploaded_file, file_type)
-    if not extracted_text:
-        st.warning("No readable text was extracted.")
-    else:
-        chunks = [chunk.strip() for chunk in extracted_text.split("\n\n") if len(chunk.strip()) > 30]
+    text = extract_text_from_file(uploaded_file, file_type)
 
-        with st.spinner("🔎 Embedding and storing chunks..."):
+    if not text:
+        st.warning("⚠️ No extractable text found.")
+    else:
+        chunks = [chunk.strip() for chunk in text.split("\n\n") if len(chunk.strip()) > 30]
+        with st.spinner("🔎 Embedding and storing text chunks..."):
             vectors = embedder.encode(chunks).tolist()
             points = [
                 PointStruct(id=str(uuid.uuid4()), vector=vec, payload={"text": chunk})
                 for vec, chunk in zip(vectors, chunks)
             ]
             qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
-        st.success(f"✅ {len(chunks)} chunks embedded and stored.")
+        st.success(f"✅ {len(chunks)} chunks embedded into Qdrant!")
 
-# --- QUERY SECTION ---
+# --- QUERY ---
 st.header("🧠 Ask a Question")
-user_query = st.text_input("Type your question here:")
+user_query = st.text_input("Enter your question:")
 
 if st.button("Get RAG Answer", disabled=not user_query.strip()):
     try:
-        # Step 1: Embed the query
         query_vec = embedder.encode([user_query])[0]
-
-        # Step 2: Search Qdrant
         results = qdrant.search(collection_name=COLLECTION_NAME, query_vector=query_vec, limit=5)
         retrieved_chunks = [hit.payload['text'] for hit in results]
 
@@ -126,10 +131,8 @@ if st.button("Get RAG Answer", disabled=not user_query.strip()):
         st.subheader("📚 Retrieved Context")
         st.write(context)
 
-        # Step 3: Generate Answer with OpenAI
         prompt = f"Answer the question based on the following context:\n\n{context}\n\nQuestion: {user_query}"
-
-        with st.spinner("💡 Generating answer..."):
+        with st.spinner("🤖 Thinking..."):
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
@@ -137,8 +140,8 @@ if st.button("Get RAG Answer", disabled=not user_query.strip()):
             )
             answer = response.choices[0].message.content.strip()
 
-        st.subheader("🤖 RAG Answer")
+        st.subheader("💬 RAG Answer")
         st.write(answer)
 
     except Exception as e:
-        st.error(f"❌ Error during RAG: {e}")
+        st.error(f"❌ Error during RAG answering: {e}")
