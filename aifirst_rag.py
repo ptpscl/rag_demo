@@ -9,61 +9,85 @@ import fitz  # PyMuPDF
 from bs4 import BeautifulSoup
 import uuid
 
-# --- PAGE SETUP ---
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="AIFirst RAG Assistant", page_icon="📚", layout="wide")
 st.title("🔍 AIFirst RAG Assistant")
 st.markdown("Upload PDFs, DOCX, Excel, TXT, and more — then ask natural language questions.")
 
-# --- SIDEBAR ---
+# --- SIDEBAR CONFIGURATION ---
 st.sidebar.title("🔐 Configuration")
 
-# OpenAI API Key
-openai_key = st.sidebar.text_input("OpenAI API Key", type="password")
-if not openai_key:
-    st.sidebar.warning("Please enter your OpenAI API key.")
-
-# Qdrant Config
-qdrant_api = st.sidebar.text_input("Qdrant API Key", type="password")
-qdrant_url = st.sidebar.text_input(
+# Input fields
+openai_key_input = st.sidebar.text_input("OpenAI API Key", type="password")
+qdrant_api_input = st.sidebar.text_input("Qdrant API Key", type="password")
+qdrant_url_input = st.sidebar.text_input(
     "Qdrant URL (e.g., https://yourhost.cloud:6333)",
     value="https://6a7820c2-43e6-45f7-bd2e-6e1f73bc6906.eu-central-1-0.aws.cloud.qdrant.io:6333"
 )
 
-# Try to connect to Qdrant only if both URL and API key are present
-qdrant_connected = False
-qdrant = None
+# Session state defaults
+for key in ["openai_valid", "qdrant_valid", "qdrant_client", "openai_client"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+# Validate on button click
+if st.sidebar.button("🔄 Connect & Validate"):
+    # OpenAI validation
+    try:
+        openai_client = OpenAI(api_key=openai_key_input)
+        openai_client.models.list()
+        st.session_state["openai_valid"] = True
+        st.session_state["openai_client"] = openai_client
+    except Exception as e:
+        st.session_state["openai_valid"] = False
+        st.sidebar.error(f"❌ OpenAI key error: {e}")
+
+    # Qdrant validation
+    try:
+        qdrant_client = QdrantClient(url=qdrant_url_input, api_key=qdrant_api_input)
+        qdrant_client.get_collections()
+        st.session_state["qdrant_valid"] = True
+        st.session_state["qdrant_client"] = qdrant_client
+    except Exception as e:
+        st.session_state["qdrant_valid"] = False
+        st.sidebar.error(f"❌ Qdrant error: {e}")
+
+# Show validation results
+if st.session_state["openai_valid"] is True:
+    st.sidebar.success("✅ OpenAI API key is valid!")
+elif st.session_state["openai_valid"] is False:
+    st.sidebar.error("❌ Invalid OpenAI API key")
+
+if st.session_state["qdrant_valid"] is True:
+    st.sidebar.success("✅ Qdrant connected!")
+elif st.session_state["qdrant_valid"] is False:
+    st.sidebar.error("❌ Qdrant not connected")
+
+# --- HALT IF NOT VALIDATED ---
+if not st.session_state.get("openai_valid"):
+    st.warning("Please validate your OpenAI API key to continue.")
+    st.stop()
+
+if not st.session_state.get("qdrant_valid"):
+    st.warning("Please validate your Qdrant credentials to continue.")
+    st.stop()
+
+client = st.session_state["openai_client"]
+qdrant = st.session_state["qdrant_client"]
 COLLECTION_NAME = "rag_demo"
 
-if qdrant_url and qdrant_api:
-    try:
-        qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api)
-        # Check or create collection
-        existing = qdrant.get_collections().collections
-        if not any(c.name == COLLECTION_NAME for c in existing):
-            qdrant.recreate_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-            )
-        st.sidebar.success("✅ Connected to Qdrant")
-        qdrant_connected = True
-    except Exception as e:
-        st.sidebar.error(f"❌ Qdrant connection failed:\n{e}")
-else:
-    st.sidebar.info("Please input Qdrant URL and API Key.")
+# --- INIT COLLECTION IF NEEDED ---
+existing = qdrant.get_collections().collections
+if not any(c.name == COLLECTION_NAME for c in existing):
+    qdrant.recreate_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+    )
 
-# --- STOP IF KEYS MISSING ---
-if not openai_key:
-    st.warning("🔑 OpenAI API Key is required.")
-    st.stop()
-
-if not qdrant_connected:
-    st.warning("🧱 Qdrant must be connected before using the app.")
-    st.stop()
-
-client = OpenAI(api_key=openai_key)
+# --- EMBEDDING MODEL ---
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-# --- FILE TEXT EXTRACTOR ---
+# --- FILE EXTRACTOR ---
 def extract_text_from_file(uploaded_file, file_type):
     try:
         if file_type == "txt":
@@ -95,7 +119,7 @@ def extract_text_from_file(uploaded_file, file_type):
         st.error(f"❌ Failed to extract text: {e}")
         return ""
 
-# --- FILE UPLOAD + EMBEDDING ---
+# --- UPLOAD + EMBED ---
 uploaded_file = st.file_uploader("📄 Upload a document (PDF, DOCX, Excel, CSV, TXT, HTML)", 
                                   type=["txt", "pdf", "docx", "xlsx", "xls", "csv", "html"])
 
@@ -134,7 +158,7 @@ if st.button("Get RAG Answer", disabled=not user_query.strip()):
         prompt = f"Answer the question based on the following context:\n\n{context}\n\nQuestion: {user_query}"
         with st.spinner("🤖 Thinking..."):
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4o",  # 👈 GPT-4o used here
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
             )
