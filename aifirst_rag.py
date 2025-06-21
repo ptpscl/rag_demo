@@ -11,7 +11,7 @@ import uuid
 
 # --- PAGE SETUP ---
 st.set_page_config(page_title="AIFirst RAG Assistant", page_icon="📚", layout="wide")
-st.title("🔍 AIFirst RAG Assistant (Multiformat + Qdrant)")
+st.title("🔍 AIFirst RAG Assistant")
 st.markdown("Upload PDFs, DOCX, Excel, TXT, and more — then ask natural language questions.")
 
 # --- SIDEBAR ---
