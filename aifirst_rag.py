@@ -180,9 +180,12 @@ user_query = st.text_input("Enter your question:")
 
 if st.button("Get RAG Answer", disabled=not user_query.strip()):
     try:
-        query_vec = embedder.encode([user_query])[0]
-        results = qdrant.query_points(collection_name=COLLECTION_NAME, query=query_vec, limit=5).points
-        retrieved_chunks = [hit.payload['text'] for hit in results]
+        # Small corpus (a couple dozen short chunks) — retrieve everything
+        # instead of relying on cosine similarity, which drops the correct
+        # target when the query is a long grant description rather than a
+        # short focused question.
+        all_points, _ = qdrant.scroll(collection_name=COLLECTION_NAME, limit=1000)
+        retrieved_chunks = [p.payload['text'] for p in all_points]
 
         context = "\n\n".join(retrieved_chunks)
 
