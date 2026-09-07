@@ -12,8 +12,8 @@ import re
 import hashlib
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="PBSAP RAG Assistant", page_icon="📚", layout="wide")
-st.title("🔍 PBSAP RAG Assistant")
+st.set_page_config(page_title="AIFirst RAG Assistant", page_icon="📚", layout="wide")
+st.title("🔍 AIFirst RAG Assistant")
 st.markdown("Upload PDFs, DOCX, Excel, TXT, and more — then ask natural language questions.")
 
 # --- SIDEBAR CONFIGURATION ---
@@ -273,11 +273,24 @@ if st.button("Get RAG Answer", disabled=not user_query.strip()):
             f"You are matching a grant to the single best-fitting PBSAP target below.\n\n"
             f"PBSAP TARGETS:\n{context}\n\n"
             f"TASK:\n{user_query}\n\n"
+            f"DISAMBIGUATION RULES — apply before choosing:\n"
+            f"- Target 2 (Restore 30% of degraded ecosystems) applies ONLY if the grant explicitly "
+            f"describes rehabilitating land/water that is degraded, denuded, damaged, or deforested. "
+            f"Mentions of 'forest,' 'biodiversity,' 'trees,' or 'conservation' alone are NOT enough to "
+            f"trigger Target 2 — those are generic terms that appear across many targets.\n"
+            f"- If the grant protects or manages an EXISTING intact forest/site (patrolling, monitoring, "
+            f"management plans, governance), prefer Target 1 (planning/management) or Target 3 "
+            f"(effective conservation of already-designated areas) over Target 2.\n"
+            f"- If the grant's core activity is a sustainable livelihood, enterprise, or production model "
+            f"built around forestry/agriculture/fisheries/aquaculture (e.g. agroforestry, forest-based "
+            f"products, sustainable harvesting as an alternative livelihood), prefer Target 10 over Target 2, "
+            f"even if it also includes some tree-planting or nursery components as a supporting activity.\n"
+            f"- Only pick Target 2 when restoration/rehabilitation of degraded land IS the grant's stated "
+            f"primary objective, not a minor or implied side-activity.\n\n"
             f"Internally compare the top 2-3 candidate targets against the grant's actual "
-            f"activities (not just keyword overlap), then commit to the single best match. "
-            f"Do NOT print your comparison or reasoning. Output ONLY the final answer, "
-            f"in exactly the format requested in the TASK above — nothing before it, "
-            f"nothing after it."
+            f"activities (not just keyword overlap), applying the disambiguation rules above. Then commit "
+            f"to the single best match. Do NOT print your comparison or reasoning. Output ONLY the final "
+            f"answer, in exactly the format requested in the TASK above — nothing before it, nothing after it."
         )
         with st.spinner("🤖 Thinking..."):
             response = client.chat.completions.create(
