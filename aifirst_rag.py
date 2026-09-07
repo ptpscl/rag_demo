@@ -151,13 +151,12 @@ uploaded_file = st.file_uploader("📄 Upload a document (PDF, DOCX, Excel, CSV,
                                   type=["txt", "pdf", "docx", "xlsx", "xls", "csv", "html"])
 
 if uploaded_file:
-    if st.button("🗑️ Clear existing chunks before embedding"):
-        qdrant.delete_collection(COLLECTION_NAME)
-        qdrant.recreate_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-        )
-        st.info("Collection cleared.")
+    # Always start fresh for this file so old/duplicate chunks never linger
+    qdrant.delete_collection(COLLECTION_NAME)
+    qdrant.recreate_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+    )
 
     file_type = uploaded_file.name.split(".")[-1].lower()
     text = extract_text_from_file(uploaded_file, file_type)
