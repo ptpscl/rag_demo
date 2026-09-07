@@ -147,7 +147,7 @@ user_query = st.text_input("Enter your question:")
 if st.button("Get RAG Answer", disabled=not user_query.strip()):
     try:
         query_vec = embedder.encode([user_query])[0]
-        results = qdrant.search(collection_name=COLLECTION_NAME, query_vector=query_vec, limit=5)
+        results = qdrant.query_points(collection_name=COLLECTION_NAME, query=query_vec, limit=5).points
         retrieved_chunks = [hit.payload['text'] for hit in results]
 
         context = "\n\n".join(retrieved_chunks)
