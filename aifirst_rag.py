@@ -110,6 +110,7 @@ def structured_chunk(text, min_chars=30):
     current_theme = None
     current_target_num = None
     current_title = None
+    current_target_theme = None  # theme pinned at the moment THIS target started
     current_body = []
 
     def flush():
@@ -118,10 +119,10 @@ def structured_chunk(text, min_chars=30):
             body = re.sub(r"\s+", " ", body)
             if len(body) > min_chars or current_title:
                 records.append({
-                    "theme": current_theme or "",
+                    "theme": current_target_theme or "",
                     "target_num": current_target_num,
                     "title": current_title or "",
-                    "text": f"Theme: {current_theme}\nTarget {current_target_num} — {current_title}\n{body}".strip()
+                    "text": f"Theme: {current_target_theme}\nTarget {current_target_num} — {current_title}\n{body}".strip()
                 })
 
     for line in lines:
@@ -129,6 +130,13 @@ def structured_chunk(text, min_chars=30):
             continue
         theme_match = THEME_HEADER.match(line)
         if theme_match:
+            # A new THEME header always describes the block of targets that
+            # FOLLOWS it, not the one just finished. Flush the target that
+            # was in progress (it keeps the theme it started under) before
+            # switching current_theme, otherwise the last target of a
+            # section gets mislabeled with the next section's theme.
+            flush()
+            current_target_num = None
             current_theme = f"THEME {theme_match.group(1)}: {theme_match.group(2)}"
             continue
         target_match = TARGET_HEADER.match(line)
@@ -136,6 +144,7 @@ def structured_chunk(text, min_chars=30):
             flush()
             current_target_num = target_match.group(1)
             current_title = target_match.group(2).strip()
+            current_target_theme = current_theme
             current_body = []
             continue
         current_body.append(line)
