@@ -13,7 +13,7 @@ import hashlib
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="PBSAP RAG Assistant", page_icon="📚", layout="wide")
-st.title("🔍 AIFirst RAG Assistant")
+st.title("🔍 PBSAP RAG Assistant")
 st.markdown("Upload PDFs, DOCX, Excel, TXT, and more — then ask natural language questions.")
 
 # --- SIDEBAR CONFIGURATION ---
