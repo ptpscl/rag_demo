@@ -192,7 +192,13 @@ if st.button("Get RAG Answer", disabled=not user_query.strip()):
         st.subheader("📚 Retrieved Context")
         st.write(context)
 
-        prompt = f"Answer the question based on the following context:\n\n{context}\n\nQuestion: {user_query}"
+        prompt = (
+            f"You are matching a grant to the single best-fitting PBSAP target below.\n\n"
+            f"PBSAP TARGETS:\n{context}\n\n"
+            f"TASK:\n{user_query}\n\n"
+            f"Before answering, briefly compare the top 2-3 candidate targets against the grant's actual "
+            f"activities (not just keyword overlap), then commit to the single best match in the requested format."
+        )
         with st.spinner("🤖 Thinking..."):
             response = client.chat.completions.create(
                 model="gpt-4o",  # 👈 GPT-4o used here
