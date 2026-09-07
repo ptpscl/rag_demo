@@ -87,6 +87,33 @@ if not any(c.name == COLLECTION_NAME for c in existing):
 # --- EMBEDDING MODEL ---
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
+import re
+
+# --- TEXT CHUNKER ---
+def chunk_text(text, max_chars=800, overlap_chars=100, min_chars=30):
+    """Splits on numbered-target headers (e.g. '1 — TITLE') when present,
+    falling back to a line-aware sliding window otherwise."""
+    target_pattern = re.compile(r"\n(?=\d{1,2}\s*[—\-–]\s*[A-Z])")
+    parts = target_pattern.split(text)
+
+    # Fallback if the document doesn't look like a numbered-target list
+    if len(parts) < 3:
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        chunks = []
+        current = ""
+        for line in lines:
+            if len(current) + len(line) + 1 > max_chars and current:
+                chunks.append(current.strip())
+                current = current[-overlap_chars:] + " " + line
+            else:
+                current = (current + " " + line).strip()
+        if current.strip():
+            chunks.append(current.strip())
+        return [c for c in chunks if len(c) > min_chars]
+
+    chunks = [re.sub(r"\s+", " ", p).strip() for p in parts]
+    return [c for c in chunks if len(c) > min_chars]
+
 # --- FILE EXTRACTOR ---
 def extract_text_from_file(uploaded_file, file_type):
     try:
@@ -124,13 +151,21 @@ uploaded_file = st.file_uploader("📄 Upload a document (PDF, DOCX, Excel, CSV,
                                   type=["txt", "pdf", "docx", "xlsx", "xls", "csv", "html"])
 
 if uploaded_file:
+    if st.button("🗑️ Clear existing chunks before embedding"):
+        qdrant.delete_collection(COLLECTION_NAME)
+        qdrant.recreate_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+        )
+        st.info("Collection cleared.")
+
     file_type = uploaded_file.name.split(".")[-1].lower()
     text = extract_text_from_file(uploaded_file, file_type)
 
     if not text:
         st.warning("⚠️ No extractable text found.")
     else:
-        chunks = [chunk.strip() for chunk in text.split("\n\n") if len(chunk.strip()) > 30]
+        chunks = chunk_text(text)
         with st.spinner("🔎 Embedding and storing text chunks..."):
             vectors = embedder.encode(chunks).tolist()
             points = [
